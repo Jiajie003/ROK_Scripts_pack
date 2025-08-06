@@ -1,0 +1,13 @@
+{
+  "DEBUG_CITY_COLLECT": true,
+  "GLOBAL_VIP": false,
+  "COLLECT_ALLIANCE_RES": true,
+  "GATHER_ALLIANCE_RES": false,
+  "show_log": true,
+  "initial_wait_hours": 0.0,
+  "interval_hours": 3.5,
+  "gold": 1,
+  "wood": 0,
+  "stone": 1,
+  "corn": 3
+}
