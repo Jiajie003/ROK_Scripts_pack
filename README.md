@@ -24,9 +24,9 @@
 
 2. **创建并激活虚拟环境**
    ```bash
-   python -m venv .venv
+   python -m venv venv
    # Windows
-   .venv\Scripts\activate
+   venv\Scripts\activate
    ```
 
 3. **(可选）升级 pip**
@@ -98,9 +98,9 @@ A Python script to automate resource gathering in Rise of Kingdoms across differ
 
 2. **Create and activate a virtual environment**
       ```bash
-    python -m venv .venv
+    python -m venv venv
     # Windows
-    .venv\Scripts\activate
+    venv\Scripts\activate
    ```
 
 3. **Upgrade pip (optional)**
