@@ -290,6 +290,7 @@ def switch_role():
     time.sleep(2)
     rx, ry = randomize_pos(770, 490)
     pyautogui.click(rx, ry); debug_log('已确认切换角色，等待加载...')
+    time.sleep(10) ##average time wait the loading page
     wait_for_game_ready()
     windows = gw.getWindowsWithTitle('Rise of Kingdoms')
     if windows:
@@ -457,10 +458,22 @@ def run_cycle():
     resource_config = {k: v for k, v in cfg.items() if k in resource_steps}
     accounts = load_accounts()
 
+    # 从 cfg 中取 launcher_path，找不到就回退到默认值
+    launcher_path = cfg.get(
+        'launcher_path',
+        r"C:\Program Files (x86)\Rise of Kingdoms\launcher.exe"
+    )
+
+    # —— 如果没配置或路径不存在，记录日志并结束本次函数 —— #
+    if not launcher_path or not os.path.isfile(launcher_path):
+        logger.error(f"Launcher 路径未配置或文件不存在: {launcher_path!r}，请检查 resource_config.json")
+        sys.exit(1)  # 结束 run_cycle，不再继续执行
+        # 或者如果想直接退出脚本，用：sys.exit(1)
+
     # 启动并进入游戏
     resume_event.wait()
-    subprocess.Popen([r"C:\Program Files (x86)\Rise of Kingdoms\launcher.exe"], shell=False)
-    logger.info('已启动 launcher')
+    subprocess.Popen([launcher_path], shell=False)
+    logger.info(f'已启动 launcher: {launcher_path}')
     time.sleep(10)
 
     resume_event.wait()
@@ -647,19 +660,29 @@ def show_config_gui():
     
     # 按钮回调：保存并退出
     def on_ok():
-        new_cfg = {
-            'DEBUG_CITY_COLLECT': city_collect_var.get(),
-            'GLOBAL_VIP': vip_var.get(),
-            'COLLECT_ALLIANCE_RES': collect_res_var.get(),
-            'GATHER_ALLIANCE_RES': gather_res_var.get(),
-            'show_log': show_log_var.get(),
-            'initial_wait_hours': initial_wait_var.get(),
-            'interval_hours': interval_var.get(),
-        }
-        for k, v in res_vars.items(): new_cfg[k] = v.get()
-        with open('resource_config.json','w',encoding='utf-8') as f:
-            json.dump(new_cfg,f,indent=2,ensure_ascii=False)
-        proceed_flag['ok'] = True  # 设置标志
+    # 1) 先读回旧配置
+        try:
+            with open('resource_config.json', 'r', encoding='utf-8') as f:
+                old_cfg = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            old_cfg = {}
+
+        # 2) 把要更新的字段覆盖到 old_cfg
+        old_cfg['DEBUG_CITY_COLLECT']    = city_collect_var.get()
+        old_cfg['GLOBAL_VIP']            = vip_var.get()
+        old_cfg['COLLECT_ALLIANCE_RES']  = collect_res_var.get()
+        old_cfg['GATHER_ALLIANCE_RES']   = gather_res_var.get()
+        old_cfg['show_log']              = show_log_var.get()
+        old_cfg['initial_wait_hours']    = initial_wait_var.get()
+        old_cfg['interval_hours']        = interval_var.get()
+        for k, v in res_vars.items():
+            old_cfg[k] = v.get()
+
+        # 3) 将合并后的整个字典写回文件
+        with open('resource_config.json', 'w', encoding='utf-8') as f:
+            json.dump(old_cfg, f, indent=2, ensure_ascii=False)
+
+        proceed_flag['ok'] = True
         config_win.destroy()
 
     ttk.Button(frm, text="启动", command=on_ok).grid(column=0,row=10,columnspan=2,pady=10)
