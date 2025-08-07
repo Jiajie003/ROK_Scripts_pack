@@ -38,9 +38,9 @@ A Python script to automate resource gathering in Rise of Kingdoms across differ
     pip install -r requirements.txt
    ```
 
-## Setting
-1. **Add the lilith Account Credential in accounts.json**
-   If your your account have two character to swtich set as 1 else one gmail one character as 0, only support two character in one account
+## Configuration
+1. **Account settings**
+   Edit accounts.json and add your Lilith account credentials and character-switch flag:
    ```bash
    {
         "username": "email1@gmail.com",
@@ -48,13 +48,30 @@ A Python script to automate resource gathering in Rise of Kingdoms across differ
         "character": 0 
     }
    ```
+   character: set to 1 if you have two characters to switch between, otherwise 0
 
-3. Set your ROK PC as 
+2. Launcher path
+   Open resource_config.json and set your local launcher executable path:
+    ```bash
+   {
+        "launcher_path": "C:\\Program Files (x86)\\Rise of Kingdoms\\launcher.exe",
+    }
+   ```
+
+3. Initial resolution
+   For first-time setup, set your desktop and game resolution to 1280×720, then close the game and launcher.
 
 ## Usage
 1. Ensure your game window is visible and not minimized.
-2. Run the main script:
+2. Activate the virtual environment by running activate_venv_pws.bat as administrator.
+3. Then, run the main script:
     ```bash
     python start_game.py
    ```
+    or run without a console window:
+   ```bash
+    pythonw start_game.py
+   ```
+   
+   The script will launch the game launcher, enter the game, and begin resource gathering automatically.
 
