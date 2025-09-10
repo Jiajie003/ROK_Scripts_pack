@@ -35,6 +35,17 @@ def disable_quick_edit():
 
 disable_quick_edit()
 
+def safe_move_and_click(x, y, move_duration=(0.10, 0.20)):
+    """在需要时临时禁用 fail-safe，移动鼠标到目标再点击，之后恢复"""
+    prev = pyautogui.FAILSAFE
+    try:
+        if prev and pyautogui.position() == (0, 0):
+            pyautogui.FAILSAFE = False  # 临时关闭
+        pyautogui.moveTo(x, y, duration=random.uniform(*move_duration))
+        pyautogui.click()
+    finally:
+        pyautogui.FAILSAFE = prev
+
 # —— 日志系统（文件 + GUI）配置 —— #
 LOG_DIR = 'logs'
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -103,16 +114,39 @@ def show_countdown(seconds: int):
     win.after(0, win.destroy)
 
 # 随机偏移坐标，避免固定点击位置被检测
-def randomize_pos(x, y, min_offset=1, max_offset=3):
-    offset = random.randint(min_offset, max_offset)
-    # 50% 概率取负
-    if random.choice([True, False]):
-        offset = -offset
-    # 随机选择在 x 或 y 轴偏移
-    if random.choice([True, False]):
-        return x + offset, y
-    else:
-        return x, y + offset
+# def randomize_pos(x, y, min_offset=1, max_offset=3):
+#     offset = random.randint(min_offset, max_offset)
+#     # 50% 概率取负
+#     if random.choice([True, False]):
+#         offset = -offset
+#     # 随机选择在 x 或 y 轴偏移
+#     if random.choice([True, False]):
+#         return x + offset, y
+#     else:
+#         return x, y + offset
+
+def randomize_pos(x, y, left, top, width, height, rel_jitter=0.002, min_px=1, max_px=None):
+    """
+    相对窗口尺寸的双轴随机抖动，并确保落点仍在窗口内。
+    rel_jitter: 抖动半径占窗口最短边的比例（默认 0.2%）
+    """
+    # 计算抖动像素半径
+    base = int(min(width, height) * rel_jitter)
+    if max_px is not None:
+        base = min(base, max_px)
+    base = max(base, min_px)
+
+    # 双轴随机
+    jx = random.randint(-base, base)
+    jy = random.randint(-base, base)
+
+    rx = x + jx
+    ry = y + jy
+
+    # 夹紧到窗口内
+    rx = max(left, min(left + width  - 1, rx))
+    ry = max(top,  min(top  + height - 1, ry))
+    return rx, ry
 
 # 包装点击，带日志和延迟
 def wait_and_click(x, y, label="", delay=1.5):
@@ -164,70 +198,115 @@ def get_game_window(title_keyword='Rise of Kingdoms'):
      return w.left, w.top, w.width, w.height
 
 def wait_and_click_rel(rel_x, rel_y, label="", delay=1.5):
-    """
-    rel_x, rel_y: 相对坐标 (0.0 - 1.0)
-    """
     resume_event.wait()
     left, top, width, height = get_game_window()
-    # 计算绝对坐标
+
+    # 基准绝对坐标（相对 -> 绝对）
     x = left + int(rel_x * width)
     y = top  + int(rel_y * height)
-    # 随机微调
-    rx, ry = randomize_pos(x, y)
-    pyautogui.click(rx, ry)
+
+    # 相对窗口尺寸的抖动
+    rx, ry = randomize_pos(x, y, left, top, width, height, rel_jitter=0.002, min_px=1, max_px=6)
+
+    # 建议给一点点移动时间，更像真人
+    pyautogui.moveTo(rx, ry, duration=random.uniform(0.08, 0.22))
+    pyautogui.click()
+
     if label:
-        debug_log(f"{label} → 点击位置: ({rx},{ry}) 原始rel: ({rel_x:.4f},{rel_y:.4f})")
+        debug_log(f"{label} → 点击: ({rx},{ry}) 原始rel: ({rel_x:.4f},{rel_y:.4f})")
+    time.sleep(delay)
+
+def wait_and_click_slow_rel(rel_x: float, rel_y: float, label: str = "", delay: float = 5.0):
+    """
+    只接受: wait_and_click_slow_rel(0.36, 0.57, 'xxx')
+    """
+    resume_event.wait()
+
+    # 合法性检查（可选）
+    if not (0.0 <= rel_x <= 1.0 and 0.0 <= rel_y <= 1.0):
+        raise ValueError(f"rel_x/rel_y 必须在 [0,1]，当前: ({rel_x}, {rel_y})")
+
+    left, top, width, height = get_game_window()
+
+    # 相对 -> 绝对
+    x = left + int(rel_x * width)
+    y = top  + int(rel_y * height)
+
+    # 抖动并夹紧到窗口内（如果你已把 randomize_pos 升级为带边界的版本）
+    rx, ry = randomize_pos(x, y, left, top, width, height, rel_jitter=0.002, min_px=1, max_px=8)
+
+    # 慢速移动 + 轻按停顿，更像真人
+    pyautogui.moveTo(rx, ry, duration=random.uniform(0.25, 0.5))
+    pyautogui.mouseDown()
+    time.sleep(random.uniform(0.06, 0.12))
+    pyautogui.mouseUp()
+
+    if label:
+        debug_log(f"{label} → 点击: ({rx},{ry}) 原始rel: ({rel_x:.4f},{rel_y:.4f})")
+
     time.sleep(delay)
 
 
+# def collect_city_resources():
+#     """
+#     城内资源采集：每次激活窗口后都执行，无需开关
+#     """
+#     debug_log('开始城内收集资源')
+#     # 以下坐标根据日志示例：
+#     pyautogui.press('space')
+#     time.sleep(1)
+#     wait_and_click_rel(473, 434, '收玉米')
+#     wait_and_click_rel(532, 389, '收木头')
+#     wait_and_click_rel(591, 359, '收石头')
+#     wait_and_click_rel(650, 314, '收金币')
+#     debug_log('城内资源收集完成')
+
 def collect_city_resources():
-    """
-    城内资源采集：每次激活窗口后都执行，无需开关
-    """
     debug_log('开始城内收集资源')
-    # 以下坐标根据日志示例：
     pyautogui.press('space')
     time.sleep(1)
-    wait_and_click(473, 434, '收玉米')
-    wait_and_click(532, 389, '收木头')
-    wait_and_click(591, 359, '收石头')
-    wait_and_click(650, 314, '收金币')
+
+    wait_and_click_rel(0.3657, 0.5705, '收玉米')
+    wait_and_click_rel(0.4144, 0.5217, '收木头')
+    wait_and_click_rel(0.4568, 0.4704, '收石头')
+    wait_and_click_rel(0.5008, 0.4190, '收金币')
+
     debug_log('城内资源收集完成')
 
 def daily_vip_collect():
     debug_log('开始每日VIP签到')
-    wait_and_click(122, 79, '打开VIP界面', delay=2)
-    wait_and_click(906, 255, '收集每日VIP')
-    wait_and_click(906, 255, '收集每日VIP(2)')
-    wait_and_click(868, 389, '收集每日金头')
-    wait_and_click_slow(868, 389, '收集每日金头(2)')
-    wait_and_click_slow(960, 198, '关闭VIP窗口')
+    wait_and_click_rel(0.0941,0.0975, '打开VIP界面', delay=2)
+    wait_and_click_rel(0.7068,0.3386, '收集每日VIP')
+    wait_and_click_rel(0.7068,0.3386, '收集每日VIP(2)')
+    wait_and_click_rel(0.6574,0.5152, '收集每日金头')
+    wait_and_click_slow_rel(0.6574,0.5152, '收集每日金头(2)')
+    wait_and_click_slow_rel(0.7407,0.2675, '关闭VIP窗口')
     debug_log('VIP签到完成')
 
 
 def collect_alliance_resource():
     debug_log('开始收集联盟资源')
-    wait_and_click(1050, 714, '打开联盟')
-    wait_and_click(791, 422, '打开领土')
-    wait_and_click(924, 241, '收集领土资源')
-    wait_and_click(979, 170, '关闭领土')
-    wait_and_click(979, 170, '关闭联盟')
+    wait_and_click_rel(0.8025,0.9407, '打开联盟')
+    wait_and_click_rel(0.6319,0.5547, '打开领土')
+    wait_and_click_rel(0.7006,0.3123, '收集领土资源')
+    wait_and_click_rel(0.7546,0.2253, '关闭领土')
+    wait_and_click_rel(0.7562,0.2266, '关闭联盟')
     debug_log('收集联盟资源完成')
 
 def send_alliance_gather():
     debug_log('开始联盟资源采集')
-    wait_and_click(1050, 714, '打开联盟')
-    wait_and_click(791, 422, '打开领土')
-    wait_and_click(968, 297, '关闭领土建筑')
-    wait_and_click(864, 361, '打开联盟资源')
-    wait_and_click(784, 552, '前往联盟金矿')
-    wait_and_click(648, 383, '点击金矿')
-    wait_and_click(880, 476, '点击采集')
-    wait_and_click(886, 382, '点击加入')
-    wait_and_click(1094, 247, '创建部队')
+    wait_and_click_rel(0.8017,0.9499, '打开联盟')
+    wait_and_click_rel(0.6304,0.5507, '打开领土')
+    wait_and_click_rel(0.7438,0.3900, '关闭领土建筑')
+    wait_and_click_rel(0.7407,0.4783, '打开联盟资源')
+    wait_and_click_rel(0.6034,0.7286, '前往联盟金矿')
+    wait_and_click_rel(0.5069,0.5086, '点击金矿')
+    wait_and_click_rel(0.6512,0.6271, '点击采集')
+    wait_and_click_rel(0.5494,0.5007, '点击加入')
+    wait_and_click_rel(0.8457,0.3202, '创建部队')
     switch_formation_once()
-    wait_and_click(969, 322, '选择第一部队')
-    wait_and_click(855, 581, '行军')
+    wait_and_click_rel(0.7477,0.4256, '选择第一部队')
+    wait_and_click_rel(0.6566,0.7642, '行军')
     pyautogui.press('space')
     debug_log('返回城内')
     time.sleep(1)
@@ -239,17 +318,17 @@ def switch_email(account):
     formation_switched = False
     debug_log("重置 formation_switched = False （切换账号后）")
     pyautogui.press('esc'); debug_log('打开菜单 (Esc)'); time.sleep(1)
-    wait_and_click(322, 645, '设置')
-    wait_and_click(178, 510, '账号与角色')
-    wait_and_click_slow(434, 235, '点击账号')
-    wait_and_click_slow(659, 545, '点击切换账号')
-    wait_and_click_slow(659, 524, '点击登录其他账号')
-    wait_and_click_slow(739, 202, '使用密码登录')
-    wait_and_click(647, 250, '点击邮箱输入框')
+    wait_and_click_rel(0.2469,0.8762, '设置')
+    wait_and_click_rel(0.1381,0.6667, '账号与角色')
+    wait_and_click_slow_rel(0.3549,0.3070, '点击账号')
+    wait_and_click_slow_rel(0.4985,0.7154, '点击切换账号')
+    wait_and_click_slow_rel(0.4977,0.6970, '点击登录其他账号')
+    wait_and_click_slow_rel(0.5648,0.2688, '使用密码登录')
+    wait_and_click_rel(0.4228,0.3333, '点击邮箱输入框')
     type_text(account['username'], '输入邮箱')
-    wait_and_click(643, 326, '点击密码输入框')
+    wait_and_click_rel(0.4159,0.4177, '点击密码输入框')
     type_text(account['password'], '输入密码')
-    wait_and_click(620, 454, '点击立即登录', delay=1); debug_log('已确认切换邮箱，等待加载...')
+    wait_and_click_rel(0.5031,0.5995, '点击立即登录', delay=1); debug_log('已确认切换邮箱，等待加载...')
     wait_for_game_ready()
     windows = gw.getWindowsWithTitle('Rise of Kingdoms')
     if windows:
@@ -258,8 +337,8 @@ def switch_email(account):
 def switch_formation_once():
     global formation_switched
     if not formation_switched:
-        wait_and_click(975, 283, "更换编队至2")
-        wait_and_click(975, 283, "更换编队至3")
+        wait_and_click_rel(0.7500,0.3715, "更换编队至2")
+        wait_and_click_rel(0.7500,0.3715, "更换编队至3")
         formation_switched = True
         debug_log("切换 formation_switched = True")
 
@@ -268,8 +347,8 @@ def switch_role():
     formation_switched = False
     debug_log("重置 formation_switched = False （切换角色后）")
     pyautogui.press('esc'); debug_log('打开菜单 (Esc)'); time.sleep(1)
-    wait_and_click(322, 645, '设置')
-    wait_and_click(178, 510, '账号与角色')
+    wait_and_click_rel(0.2469,0.8762, '设置')
+    wait_and_click_rel(0.1381,0.6667, '账号与角色')
     debug_log('检测到需要切换角色，开始识别绿勾...')
     try:
         check_pos = pyautogui.locateOnScreen('template_image/green_check.png', confidence=0.85)
@@ -281,15 +360,15 @@ def switch_role():
     debug_log(f"✅ 检测到绿勾勾在位置: {center}")
     if x < 500:
         debug_log('绿勾在左角色 → 点击右边')
-        rx, ry = randomize_pos(920, 355)
-        pyautogui.click(rx, ry)
+        wait_and_click_rel(0.7096, 0.4733, '点击右边角色')
+
     else:
         debug_log('绿勾在右角色 → 点击左边')
-        rx, ry = randomize_pos(550, 355)
-        pyautogui.click(rx, ry)
+        wait_and_click_rel(0.4068, 0.4602, '点击左边角色')
+
     time.sleep(2)
-    rx, ry = randomize_pos(770, 490)
-    pyautogui.click(rx, ry); debug_log('已确认切换角色，等待加载...')
+    wait_and_click_rel(0.5932, 0.6597, '确认切换')
+    debug_log('已确认切换角色，等待加载...')
     time.sleep(10) ##average time wait the loading page
     wait_for_game_ready()
     windows = gw.getWindowsWithTitle('Rise of Kingdoms')
@@ -483,8 +562,31 @@ def run_cycle():
     time.sleep(3)
 
     resume_event.wait()
-    rx, ry = randomize_pos(1181, 635)
-    pyautogui.click(rx, ry); debug_log(f"点击启动按钮 → 实际: ({rx}, {ry}) 原始: (1181, 635)")
+    if launcher_windows:
+        w = launcher_windows[0]
+        try:
+            if w.isMinimized:
+                w.restore()
+        except Exception:
+            pass
+        try:
+            w.moveTo(0, 0)
+            debug_log("移动 Launcher 窗口到 (0,0)")
+        except Exception:
+            pass
+
+        time.sleep(0.3)
+
+        # ✅ 你刚刚测出来的启动按钮相对坐标
+        rel_x, rel_y = 0.8679, 0.8244
+
+        x = w.left + int(round(rel_x * w.width))
+        y = w.top  + int(round(rel_y * w.height))
+        rx, ry = randomize_pos(x, y, w.left, w.top, w.width, w.height)
+        safe_move_and_click(rx, ry)
+        debug_log(f"点击启动按钮 → rel=({rel_x:.4f}, {rel_y:.4f}) → ({rx}, {ry})")
+    else:
+        logger.error("❌ 未找到 Launcher 窗口，无法点击启动按钮")
     time.sleep(1)
 
     # —— 等待游戏窗口出现（但不激活），再检测红宝石 —— #
